@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convertitore SPASS → CSV</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1b1f24; --muted:#5d6670; --accent:#1a73e8; --border:#d8dce1; --ok:#137333; --err:#c5221f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --card:#1e2226; --text:#e8eaed; --muted:#9aa3ad; --accent:#8ab4f8; --border:#363c42; --ok:#81c995; --err:#f28b82; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; display:flex; justify-content:center; padding:24px 16px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px; width:100%; max-width:480px; }
+  .top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  h1 { font-size:1.25rem; margin:0 0 4px; }
+  select { padding:6px 8px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text); font-size:.9rem; }
+  select option { background:var(--card); color:var(--text); }
+  p.sub { color:var(--muted); font-size:.9rem; margin:0 0 20px; }
+  label { display:block; font-size:.85rem; color:var(--muted); margin:14px 0 6px; }
+  input[type=file], input[type=password] { width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text); font-size:1rem; }
+  button { margin-top:18px; width:100%; padding:12px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-size:1rem; cursor:pointer; }
+  @media (prefers-color-scheme: dark) { button { color:#0b1522; } }
+  button:disabled { opacity:.5; cursor:default; }
+  #status { margin-top:16px; font-size:.9rem; min-height:1.2em; }
+  .ok { color:var(--ok); } .err { color:var(--err); }
+  .note { margin-top:18px; font-size:.8rem; color:var(--muted); border-top:1px solid var(--border); padding-top:14px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top">
+    <h1 id="t-title"></h1>
+    <select id="lang" aria-label="Lingua / Language">
+      <option value="it">Italiano</option>
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+      <option value="de">Deutsch</option>
+      <option value="es">Español</option>
+      <option value="fr">Français</option>
+    </select>
+  </div>
+  <p class="sub" id="t-sub"></p>
+
+  <label for="file" id="t-file"></label>
+  <input type="file" id="file" accept=".spass">
+
+  <label for="pwd" id="t-pwd"></label>
+  <input type="password" id="pwd" autocomplete="off">
+
+  <button id="go"></button>
+  <div id="status"></div>
+
+  <div class="note" id="t-note"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ---------- Traduzioni (italiano = lingua principale) ---------- */
+const T = {
+  it: {
+    title: 'Convertitore SPASS → CSV',
+    sub: 'Tutto avviene nel tuo browser: nessun dato viene inviato online.',
+    file: 'File .spass (esportato da Samsung Pass)',
+    pwd: 'Password scelta durante l’esportazione',
+    go: 'Converti e scarica CSV',
+    note: 'Il CSV contiene le password in chiaro: importalo in Google Password Manager (passwords.google.com → Impostazioni → Importa) e poi eliminalo.',
+    working: 'Decifrazione in corso…',
+    needBoth: 'Seleziona il file e inserisci la password.',
+    done: n => `Fatto: ${n} password convertite.`,
+    declined: 'Salvataggio annullato. Puoi riprovare con il pulsante.',
+    saveFail: 'Conversione riuscita, ma non è stato possibile salvare il file.',
+    noTable: 'Decifrato, ma non ho trovato la tabella delle password: formato diverso dal previsto.',
+    wrong: 'Errore: password sbagliata o file non valido.'
+  },
+  en: {
+    title: 'SPASS → CSV Converter',
+    sub: 'Everything runs in your browser: no data is sent to any server.',
+    file: '.spass file (exported from Samsung Pass)',
+    pwd: 'Password chosen during export',
+    go: 'Convert and download CSV',
+    note: 'The CSV contains your passwords in plain text: import it into Google Password Manager (passwords.google.com → Settings → Import), then delete it.',
+    working: 'Decrypting…',
+    needBoth: 'Select the file and enter the password.',
+    done: n => `Done: ${n} passwords converted.`,
+    declined: 'Save cancelled. You can try again with the button.',
+    saveFail: 'Conversion succeeded, but the file could not be saved.',
+    noTable: 'Decrypted, but no password table was found: the format differs from what was expected.',
+    wrong: 'Error: wrong password or invalid file.'
+  },
+  zh: {
+    title: 'SPASS 转 CSV 转换器',
+    sub: '所有操作都在浏览器中完成：不会向任何服务器发送数据。',
+    file: '.spass 文件（从 Samsung Pass 导出）',
+    pwd: '导出时设置的密码',
+    go: '转换并下载 CSV',
+    note: 'CSV 文件包含明文密码：请将其导入 Google 密码管理器（passwords.google.com → 设置 → 导入），完成后立即删除。',
+    working: '正在解密…',
+    needBoth: '请选择文件并输入密码。',
+    done: n => `完成：已转换 ${n} 个密码。`,
+    declined: '已取消保存，可以点击按钮重试。',
+    saveFail: '转换成功，但无法保存文件。',
+    noTable: '已解密，但未找到密码表：文件格式与预期不同。',
+    wrong: '错误：密码不正确或文件无效。'
+  },
+  de: {
+    title: 'SPASS-zu-CSV-Konverter',
+    sub: 'Alles läuft in Ihrem Browser ab: Es werden keine Daten an einen Server gesendet.',
+    file: '.spass-Datei (aus Samsung Pass exportiert)',
+    pwd: 'Beim Export gewähltes Passwort',
+    go: 'Konvertieren und CSV herunterladen',
+    note: 'Die CSV-Datei enthält die Passwörter im Klartext: Importieren Sie sie in den Google Passwortmanager (passwords.google.com → Einstellungen → Importieren) und löschen Sie sie anschließend.',
+    working: 'Entschlüsselung läuft…',
+    needBoth: 'Bitte Datei auswählen und Passwort eingeben.',
+    done: n => `Fertig: ${n} Passwörter konvertiert.`,
+    declined: 'Speichern abgebrochen. Sie können es mit der Schaltfläche erneut versuchen.',
+    saveFail: 'Konvertierung erfolgreich, aber die Datei konnte nicht gespeichert werden.',
+    noTable: 'Entschlüsselt, aber keine Passworttabelle gefunden: Das Format weicht vom erwarteten ab.',
+    wrong: 'Fehler: falsches Passwort oder ungültige Datei.'
+  },
+  es: {
+    title: 'Conversor de SPASS a CSV',
+    sub: 'Todo ocurre en tu navegador: no se envía ningún dato a ningún servidor.',
+    file: 'Archivo .spass (exportado desde Samsung Pass)',
+    pwd: 'Contraseña elegida al exportar',
+    go: 'Convertir y descargar CSV',
+    note: 'El CSV contiene las contraseñas en texto plano: impórtalo en el Administrador de contraseñas de Google (passwords.google.com → Configuración → Importar) y bórralo después.',
+    working: 'Descifrando…',
+    needBoth: 'Selecciona el archivo e introduce la contraseña.',
+    done: n => `Listo: ${n} contraseñas convertidas.`,
+    declined: 'Guardado cancelado. Puedes volver a intentarlo con el botón.',
+    saveFail: 'Conversión correcta, pero no se pudo guardar el archivo.',
+    noTable: 'Descifrado, pero no se encontró la tabla de contraseñas: el formato es distinto del esperado.',
+    wrong: 'Error: contraseña incorrecta o archivo no válido.'
+  },
+  fr: {
+    title: 'Convertisseur SPASS → CSV',
+    sub: 'Tout se passe dans votre navigateur : aucune donnée n’est envoyée à un serveur.',
+    file: 'Fichier .spass (exporté depuis Samsung Pass)',
+    pwd: 'Mot de passe choisi lors de l’exportation',
+    go: 'Convertir et télécharger le CSV',
+    note: 'Le CSV contient les mots de passe en clair : importez-le dans le Gestionnaire de mots de passe Google (passwords.google.com → Paramètres → Importer), puis supprimez-le.',
+    working: 'Déchiffrement en cours…',
+    needBoth: 'Sélectionnez le fichier et saisissez le mot de passe.',
+    done: n => `Terminé : ${n} mots de passe convertis.`,
+    declined: 'Enregistrement annulé. Vous pouvez réessayer avec le bouton.',
+    saveFail: 'Conversion réussie, mais le fichier n’a pas pu être enregistré.',
+    noTable: 'Déchiffré, mais table des mots de passe introuvable : le format diffère de celui attendu.',
+    wrong: 'Erreur : mot de passe incorrect ou fichier non valide.'
+  }
+};
+
+let lang = 'it';
+let last = null; // ultimo messaggio di stato, per ritradurlo al cambio lingua
+
+function status(key, cls, arg) {
+  last = key ? { key, cls, arg } : null;
+  const el = $('status');
+  if (!last) { el.textContent = ''; el.className = ''; return; }
+  const v = T[lang][key];
+  el.textContent = typeof v === 'function' ? v(arg) : v;
+  el.className = cls || '';
+}
+
+function applyLang(l) {
+  if (!T[l]) l = 'it';
+  lang = l;
+  document.documentElement.lang = l;
+  document.title = T[l].title;
+  $('t-title').textContent = T[l].title;
+  $('t-sub').textContent = T[l].sub;
+  $('t-file').textContent = T[l].file;
+  $('t-pwd').textContent = T[l].pwd;
+  $('go').textContent = T[l].go;
+  $('t-note').textContent = T[l].note;
+  $('lang').value = l;
+  if (last) status(last.key, last.cls, last.arg);
+}
+
+$('lang').onchange = e => {
+  applyLang(e.target.value);
+  try { localStorage.setItem('spass-lang', e.target.value); } catch (err) {}
+};
+
+let saved = null;
+try { saved = localStorage.getItem('spass-lang'); } catch (err) {}
+applyLang(saved && T[saved] ? saved : 'it');
+
+/* ---------- Conversione ---------- */
+function b64ToBytes(s) {
+  const bin = atob(s.replace(/\s+/g, ''));
+  return Uint8Array.from(bin, c => c.charCodeAt(0));
+}
+function b64ToUtf8(s) {
+  if (!s) return '';
+  try { return new TextDecoder().decode(b64ToBytes(s)); } catch (e) { return s; }
+}
+function csvCell(v) { return '"' + String(v ?? '').replace(/"/g, '""') + '"'; }
+
+async function decryptSpass(buf, password) {
+  const text = new TextDecoder().decode(buf);
+  const data = b64ToBytes(text);
+  const salt = data.slice(0, 20), iv = data.slice(20, 36), ct = data.slice(36);
+  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 70000, hash: 'SHA-256' },
+    km, { name: 'AES-CBC', length: 256 }, false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, ct);
+  return new TextDecoder().decode(plain);
+}
+
+function parsePasswords(plain) {
+  const tables = plain.split(/\r?\nnext_table\r?\n/);
+  for (const t of tables) {
+    const lines = t.split(/\r?\n/).filter(l => l.trim());
+    const hi = lines.findIndex(l => l.includes('origin_url') && l.includes('password_value'));
+    if (hi < 0) continue;
+    const head = lines[hi].split(';');
+    const idx = n => head.indexOf(n);
+    const get = (f, n) => idx(n) >= 0 ? b64ToUtf8(f[idx(n)]) : '';
+    const rows = [];
+    for (const l of lines.slice(hi + 1)) {
+      const f = l.split(';');
+      const url = get(f, 'origin_url');
+      const user = get(f, 'username_value');
+      const pass = get(f, 'password_value');
+      const note = get(f, 'credential_memo') || get(f, 'memo');
+      if (!url && !user && !pass) continue;
+      let name = url, outUrl = url, outNote = note;
+      const m = /^android:\/\/[^@]*@([^\/]+)/.exec(url);
+      if (m) {
+        // App Android: Google accetta solo URL https, quindi ricavo un dominio dal nome del pacchetto
+        const pkg = m[1], parts = pkg.split('.');
+        outUrl = parts.length >= 2
+          ? 'https://' + parts[1] + '.' + parts[0] + '/'
+          : 'https://' + pkg + '.com/';
+        name = pkg;
+        outNote = (note ? note + ' ' : '') + '[app Android: ' + pkg + ']';
+      } else if (/^https?:\/\//i.test(url)) {
+        try { name = new URL(url).hostname || url; } catch (e) {}
+      } else if (url) {
+        // Non è un URL valido (es. "Amazon" o "example.com"): lo trasformo in https://
+        const clean = url.trim();
+        if (/^[^\s\/]+\.[a-z]{2,}(\/.*)?$/i.test(clean)) {
+          outUrl = 'https://' + clean;
+        } else {
+          const slug = clean.toLowerCase().replace(/[^a-z0-9]/g, '');
+          outUrl = slug ? 'https://www.' + slug + '.com/' : 'https://www.example.com/';
+        }
+        name = clean;
+        outNote = (note ? note + ' ' : '') + '[origine: ' + clean + ']';
+      } else {
+        outUrl = 'https://www.example.com/';
+        name = user || 'senza nome';
+        outNote = (note ? note + ' ' : '') + '[URL mancante]';
+      }
+      rows.push([name, outUrl, user, pass, outNote]);
+    }
+    return rows;
+  }
+  return null;
+}
+
+$('go').onclick = async () => {
+  const file = $('file').files[0], pwd = $('pwd').value;
+  if (!file || !pwd) { status('needBoth', 'err'); return; }
+  $('go').disabled = true; status('working');
+  try {
+    const plain = await decryptSpass(await file.arrayBuffer(), pwd);
+    const rows = parsePasswords(plain);
+    if (!rows) throw new Error('format');
+    const csv = ['name,url,username,password,note', ...rows.map(r => r.map(csvCell).join(','))].join('\r\n');
+    const dl = await window.claude?.use?.('downloads');
+    if (dl) {
+      try {
+        await dl.save({ filename: 'password.csv', data: csv });
+        status('done', 'ok', rows.length);
+      } catch (e) {
+        status(e && e.code === 'declined' ? 'declined' : 'saveFail', 'err');
+      }
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = 'password.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      status('done', 'ok', rows.length);
+    }
+  } catch (e) {
+    status(e.message === 'format' ? 'noTable' : 'wrong', 'err');
+  }
+  $('go').disabled = false;
+};
+</script>
+</body>
+</html>
